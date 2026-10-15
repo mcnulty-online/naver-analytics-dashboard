@@ -1,0 +1,38 @@
+name: Auto Update Dashboard with New Excel Data
+
+on:
+  push:
+    paths:
+      - 'data/**' # data 폴더에 파일이 추가/수정되면 자동 실행
+  workflow_dispatch: # 수동 실행 버튼 활성화
+
+permissions:
+  contents: write # 깃허브가 스스로 index.html을 수정하고 커밋할 수 있도록 권한 부여
+
+jobs:
+  update-data:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 저장소 가져오기
+        uses: actions/checkout@v4
+
+      - name: 파이썬 설정
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: 라이브러리 설치
+        run: |
+          pip install pandas openpyxl
+
+      - name: 엑셀 데이터 분석 및 index.html 갱신
+        run: |
+          python process_excel.py
+
+      - name: 변경된 index.html 자동 커밋 및 푸시
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add index.html
+          git commit -m "Auto-update index.html with new month data [skip ci]" || exit 0
+          git push
