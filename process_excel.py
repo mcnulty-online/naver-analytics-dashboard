@@ -170,6 +170,50 @@ def build_month(files):
 
     return m_key, month_obj, new_names, query_obj
 
+# ---------- 광고 (네이버 광고주센터 '전체 캠페인' 다운로드) ----------
+# data/ads/YYYY-MM/ 폴더에 그 달의 검색광고(SA)·디스플레이(GFA) 파일을 넣으면 됨 (파일명 자유)
+# 행마다 '광고 구분'(검색광고/디스플레이 광고)으로 SA·GFA를 나누고, 같은 캠페인 ID가 여러 파일에 있으면 파일명이 뒤인 것 우선
+ADS_DIR = os.path.join(DATA_DIR, "ads")
+AD_COLS = ["노출수", "클릭수", "총비용", "총 전환수", "총 전환매출액",
+           "기여전환수(마지막클릭)", "기여전환매출액(마지막클릭)", "기여전환매출액(데이터기반)"]
+
+def _num(v):
+    try:
+        f = float(str(v).replace(",", ""))
+        return 0 if f != f else f
+    except (TypeError, ValueError):
+        return 0
+
+def load_ads():
+    out = []
+    if not os.path.isdir(ADS_DIR):
+        return out
+    for mdir in sorted(os.listdir(ADS_DIR)):
+        mp = os.path.join(ADS_DIR, mdir)
+        if not (os.path.isdir(mp) and re.match(r"^\d{4}-\d{2}$", mdir)):
+            continue
+        camp = {}
+        for f in sorted(os.listdir(mp)):
+            if not f.endswith(".xlsx"):
+                continue
+            df = pd.read_excel(os.path.join(mp, f))
+            if "광고 구분" not in df.columns or "캠페인 이름" not in df.columns:
+                print(f"광고 파일 형식이 아님: {f}")
+                continue
+            df = df[df["광고 구분"].isin(["검색광고", "디스플레이 광고"]) & df["캠페인 이름"].notna()]
+            has_attr = "기여전환매출액(마지막클릭)" in df.columns
+            for _, r in df.iterrows():
+                vals = [round(_num(r[c])) if c in df.columns else None for c in AD_COLS]
+                if not has_attr:
+                    vals[5] = vals[6] = vals[7] = None
+                camp[str(r["캠페인 ID"])] = ["SA" if r["광고 구분"] == "검색광고" else "GFA", str(r["캠페인 ID"]), str(r["캠페인 이름"]).strip(),
+                                           str(r.get("캠페인 분류", "") or ""), str(r.get("ON/OFF", "") or "")] + vals
+        rows = [c for c in camp.values() if (c[7] or 0) > 0 or (c[9] or 0) > 0]
+        rows.sort(key=lambda c: -(c[7] or 0))
+        out.append({"m": mdir, "rows": rows})
+        print(f"[광고 {mdir}] 캠페인 {len(rows)}개 · 광고비 {sum(c[7] for c in rows):,.0f}원")
+    return out
+
 def main():
     if not os.path.exists(HTML_FILE):
         print("index.html not found.")
@@ -243,6 +287,7 @@ def main():
             else:
                 data["query"].append(query_obj)
     data["months"].sort(key=lambda x: x["m"])
+    data["ads"] = load_ads()
     if "query" in data:
         data["query"].sort(key=lambda x: x["m"])
 
