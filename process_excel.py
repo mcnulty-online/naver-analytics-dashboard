@@ -20,36 +20,48 @@ def get_cat2(c3):
         return "드립백"
     return "기타"
 
+DATE_RE = re.compile(r"(\d{8})-(\d{8})")
+
+def file_type(fn):
+    fn = fn.lower()
+    if "sales" in fn or "판매" in fn or "상품" in fn:
+        return "sales"
+    if "visit" in fn or "방문" in fn or "유입" in fn:
+        return "visit"
+    if "query" in fn or "검색" in fn:
+        return "query"
+    if "cust" in fn or "고객" in fn:
+        return "cust"
+    return None
+
 def find_excel_files():
-    files = {"sales": None, "visit": None, "query": None, "cust": None}
+    """data 폴더의 엑셀을 종류별로 모음. 각 항목 = (경로, 시작일, 종료일) — 날짜는 파일명의 YYYYMMDD-YYYYMMDD"""
+    files = {"sales": [], "visit": [], "query": [], "cust": []}
     if not os.path.exists(DATA_DIR):
         return files
-    for f in os.listdir(DATA_DIR):
+    for f in sorted(os.listdir(DATA_DIR)):
         if not f.endswith(".xlsx"):
             continue
-        p = os.path.join(DATA_DIR, f)
-        fn = f.lower()
-        if "sales" in fn or "판매" in fn or "상품" in fn:
-            files["sales"] = p
-        elif "visit" in fn or "방문" in fn or "유입" in fn:
-            files["visit"] = p
-        elif "query" in fn or "검색" in fn:
-            files["query"] = p
-        elif "cust" in fn or "고객" in fn:
-            files["cust"] = p
+        t = file_type(f)
+        if not t:
+            continue
+        m = DATE_RE.search(f)
+        start, end = (m.group(1), m.group(2)) if m else ("", "")
+        files[t].append((os.path.join(DATA_DIR, f), start, end))
     return files
 
-def main():
-    if not os.path.exists(HTML_FILE):
-        print("index.html not found.")
-        return
+def latest_by_month(items):
+    """같은 달(시작일 기준) 파일이 여러 개면 종료일이 가장 늦은 파일 하나만 (같으면 파일명 뒤쪽)"""
+    best = {}
+    for p, start, end in items:
+        key = f"{start[:4]}-{start[4:6]}" if start else os.path.basename(p)
+        cur = best.get(key)
+        if cur is None or (end, p) > (cur[1], cur[0]):
+            best[key] = (p, end)
+    return {k: v[0] for k, v in best.items()}
 
-    files = find_excel_files()
-    print("Found files:", files)
-    if not files["sales"]:
-        print("판매분석(sales) 파일이 필요합니다.")
-        return
-
+def build_month(files):
+    """한 달치: files = {"sales": 경로, "visit": 경로|None, "query": 경로|None} → (월, month_obj, names, query_obj)"""
     # 1. SALES 처리
     df_s = pd.read_excel(files["sales"])
     tot_s = df_s[df_s["채널상품명"] == "전체"].iloc[0]
@@ -156,10 +168,31 @@ def main():
         K.sort(key=lambda x: x[1], reverse=True)
         query_obj = {"m": m_key, "T": QT, "daily": q_daily, "K": K}
 
+    return m_key, month_obj, new_names, query_obj
+
+def main():
+    if not os.path.exists(HTML_FILE):
+        print("index.html not found.")
+        return
+
+    files = find_excel_files()
+    sales = latest_by_month(files["sales"])
+    visit = latest_by_month(files["visit"])
+    query = latest_by_month(files["query"])
+    print("판매 파일(월별 최신):", sales)
+    if not sales:
+        print("판매분석(sales) 파일이 필요합니다.")
+        return
+
+    results = []
+    for key in sorted(sales):
+        mk = key if re.match(r"\d{4}-\d{2}$", key) else None
+        results.append(build_month({"sales": sales[key], "visit": visit.get(mk) if mk else None, "query": query.get(mk) if mk else None}))
+
     # 4. CUSTOMER 처리
     cust_objs = []
-    if files["cust"]:
-        df_c = pd.read_excel(files["cust"])
+    for cust_path, _, _ in sorted(files["cust"], key=lambda x: (x[2], x[0])):
+        df_c = pd.read_excel(cust_path)
         for rng in df_c["날짜"].unique():
             c_m = rng.split("~")[0][:7]
             sub = df_c[df_c["날짜"] == rng]
@@ -187,28 +220,30 @@ def main():
 
     data = json.loads(match.group(1))
 
-    # months 교체 또는 추가
-    existing_idx = next((i for i, m in enumerate(data.get("months", [])) if m["m"] == m_key), None)
-    if existing_idx is not None:
-        data["months"][existing_idx] = month_obj
-    else:
-        data["months"].append(month_obj)
-    data["months"].sort(key=lambda x: x["m"])
-
-    # names 업데이트
-    if "names" not in data:
-        data["names"] = {}
-    data["names"].update(new_names)
-
-    # query 업데이트
-    if query_obj:
-        if "query" not in data:
-            data["query"] = []
-        q_idx = next((i for i, q in enumerate(data["query"]) if q["m"] == m_key), None)
-        if q_idx is not None:
-            data["query"][q_idx] = query_obj
+    for m_key, month_obj, new_names, query_obj in results:
+        # months 교체 또는 추가
+        existing_idx = next((i for i, m in enumerate(data.get("months", [])) if m["m"] == m_key), None)
+        if existing_idx is not None:
+            data["months"][existing_idx] = month_obj
         else:
-            data["query"].append(query_obj)
+            data["months"].append(month_obj)
+
+        # names 업데이트
+        if "names" not in data:
+            data["names"] = {}
+        data["names"].update(new_names)
+
+        # query 업데이트
+        if query_obj:
+            if "query" not in data:
+                data["query"] = []
+            q_idx = next((i for i, q in enumerate(data["query"]) if q["m"] == m_key), None)
+            if q_idx is not None:
+                data["query"][q_idx] = query_obj
+            else:
+                data["query"].append(query_obj)
+    data["months"].sort(key=lambda x: x["m"])
+    if "query" in data:
         data["query"].sort(key=lambda x: x["m"])
 
     # cust 업데이트
@@ -226,7 +261,8 @@ def main():
     with open(HTML_FILE, "w", encoding="utf-8") as f:
         f.write(html_updated)
 
-    print(f"[{m_key}] 데이터가 index.html에 정상 반영되었습니다.")
+    for r in results:
+        print(f"[{r[0]}] {r[1]['range']} 데이터가 index.html에 정상 반영되었습니다.")
 
 if __name__ == "__main__":
     main()
