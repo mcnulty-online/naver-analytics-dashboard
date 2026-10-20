@@ -21,10 +21,3 @@
    - 파일 이름은 상관없습니다. 행마다 '광고 구분'으로 검색광고(SA)·디스플레이(GFA)를 나눕니다.
    - 같은 달 파일을 다시 올리면 같은 캠페인은 파일명이 뒤쪽(나중 다운로드)인 값으로 바뀝니다.
 4. 하루 평균은 그 달 스토어 판매 데이터 일수로 나눕니다. 판매 파일과 광고 파일 기간을 맞춰 주세요.
-
-## 비밀번호
-
-- 대시보드는 비밀번호를 입력해야 열립니다. 데이터는 비밀번호로 암호화돼 있어서, 비밀번호 없이 `index.html` 을 받아도 내용을 볼 수 없습니다.
-- 자동 갱신(Actions)이 동작하려면 저장소 **Settings → Secrets and variables → Actions → New repository secret** 에 이름 `DASHBOARD_PASSWORD`, 값에 비밀번호를 넣어 둬야 합니다.
-- 비밀번호를 바꾸려면: 로컬에서 `DASHBOARD_PASSWORD=기존비번 python page_crypt.py decrypt` → `DASHBOARD_PASSWORD=새비번 python page_crypt.py encrypt` 후 커밋하고, Secret 값도 새 비밀번호로 바꿉니다.
-- 주의: 저장소가 공개라서 `data` 폴더의 엑셀 원본은 그대로 공개돼 있습니다. 비밀번호는 대시보드 화면만 막습니다.
