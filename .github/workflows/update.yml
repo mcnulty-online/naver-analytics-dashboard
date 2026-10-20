@@ -23,9 +23,11 @@ jobs:
 
       - name: 라이브러리 설치
         run: |
-          pip install pandas openpyxl
+          pip install pandas openpyxl cryptography
 
       - name: 엑셀 데이터 분석 및 index.html 갱신
+        env:
+          DASHBOARD_PASSWORD: ${{ secrets.DASHBOARD_PASSWORD }}
         run: |
           python process_excel.py
 

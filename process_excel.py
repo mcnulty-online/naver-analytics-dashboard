@@ -2,6 +2,7 @@ import os
 import re
 import json
 import pandas as pd
+from page_crypt import read_app, write_app
 
 DATA_DIR = "data"
 HTML_FILE = "index.html"
@@ -253,8 +254,7 @@ def main():
         cust_objs.sort(key=lambda x: x["m"])
 
     # 5. index.html에 주입
-    with open(HTML_FILE, "r", encoding="utf-8") as f:
-        html = f.read()
+    html = read_app(HTML_FILE)  # 암호화된 index.html 을 비밀번호로 풀어서 읽음
 
     pattern = r"const DATA\s*=\s*(\{.*?\});\nconst PKEYS"
     match = re.search(pattern, html, re.DOTALL)
@@ -303,8 +303,7 @@ def main():
     new_data_str = "const DATA = " + json.dumps(data, ensure_ascii=False) + ";\nconst PKEYS"
     html_updated = re.sub(pattern, new_data_str, html, flags=re.DOTALL)
 
-    with open(HTML_FILE, "w", encoding="utf-8") as f:
-        f.write(html_updated)
+    write_app(html_updated, HTML_FILE)  # 다시 비밀번호로 암호화해서 저장
 
     for r in results:
         print(f"[{r[0]}] {r[1]['range']} 데이터가 index.html에 정상 반영되었습니다.")
